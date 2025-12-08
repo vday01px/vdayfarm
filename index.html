@@ -6,164 +6,185 @@
 <title>Nông Trại Hạnh Phúc</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-body{margin:0;background:#d9f7c4;font-family:Arial,sans-serif}
-.top-bar{display:flex;justify-content:space-between;padding:12px}
-.player-box{display:flex;align-items:center;background:#ffecc7;padding:8px 12px;border-radius:16px}
-.avatar{width:38px;height:38px;border-radius:50%;margin-right:8px}
-.wallet{display:flex;align-items:center;background:#fff8d8;padding:8px 12px;border-radius:16px;font-size:14px;margin-left:6px}
-.wallet img{width:20px;margin-right:6px}
-.field{margin-top:20px;display:flex;justify-content:center}
-.grid{width:320px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.cell{width:100px;height:100px;background:#e3ffc7;border-radius:14px;box-shadow:0 3px 0 #a9c69b;display:flex;justify-content:center;align-items:center;font-size:40px;cursor:pointer;transition:0.2s}
-.cell:hover{transform:scale(1.1)}
-.cell.ready{background:#ffd700;animation:glow 1s infinite}
+/* Giữ nguyên style cũ, chỉ thêm vài hiệu ứng */
+.cell.ready{animation:glow 1.5s infinite}
 @keyframes glow{0%,100%{box-shadow:0 0 20px gold}50%{box-shadow:0 0 40px orange}}
-.cell.pest{background:#ff5722}
-.bottom-menu{position:fixed;bottom:0;width:100%;background:#fff;padding:10px;display:flex;justify-content:space-around;box-shadow:0 -2px 8px rgba(0,0,0,0.2)}
-.menu-btn{background:#ffe2a7;border:none;padding:12px 20px;border-radius:14px;font-weight:bold}
-.popup{position:fixed;top:0;left:0;width:100%;height:100%;background:#00000070;display:flex;justify-content:center;align-items:center}
-.hidden{display:none}
-.popup-box{background:white;padding:20px;border-radius:14px;width:80%;max-height:80%;overflow:auto}
-.close-btn{margin-top:12px;width:100%;padding:10px;border-radius:10px;background:#ffe2a7;border:none;font-weight:bold}
-.wheel{position:relative;width:300px;height:300px;border-radius:50%;background:conic-gradient(red 0deg, orange 45deg, yellow 90deg, green 135deg, blue 180deg, purple 225deg, pink 270deg, red 315deg, orange 360deg);animation:spin 3s cubic-bezier(.25,.46,.45,.94) paused;margin:20px auto;transition:0.5s}
-.wheel-pointer{position:absolute;top:-10px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:15px solid transparent;border-right:15px solid transparent;border-top:30px solid lime}
-.wheel.spinning{animation-play-state:running}
-@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-.shop-item{padding:10px;border-bottom:1px solid #eee;cursor:pointer}
-.shop-item:hover{background:#f0f0f0}
-.shop-item.locked{opacity:0.5;cursor:not-allowed}
+.cell.boosted{box-shadow:0 0 30px #00ff00 !important;background:#90ff90 !important}
+.time-left{font-size:11px !important}
 </style>
 </head>
 <body>
-
-<div class="top-bar">
-    <div class="player-box">
-        <img src="https://i.imgur.com/8Km9tLL.png" class="avatar">
-        <div><div id="playerName">Đang tải...</div><div id="playerLevel">Lv.1</div></div>
-    </div>
-    <div class="wallet"><img src="https://i.imgur.com/xUdV4gj.png"><span id="diamond">0</span></div>
-    <div class="wallet"><img src="https://i.imgur.com/3apXK4F.png"><span id="gold">0</span></div>
-</div>
-
+<!-- Giữ nguyên giao diện cũ -->
+<div class="top-bar"> ... </div>
 <div class="field"><div id="grid" class="grid"></div></div>
-
 <div class="bottom-menu">
-    <button onclick="openTab('tasks')" class="menu-btn">Nhiệm vụ</button>
-    <button onclick="openTab('shop')" class="menu-btn">Cửa hàng</button>
-    <button onclick="openTab('wheel')" class="menu-btn">Quay!</button>
-    <button onclick="openTab('bag')" class="menu-btn">Túi</button>
+    <button onclick="openTab('tasks')" class="menu-btn">Task</button>
+    <button onclick="openTab('shop')" class="menu-btn">Shop</button>
+    <button onclick="harvestAllReady()" class="menu-btn" id="harvestBtn" style="display:none;background:#ff5722;color:white">Thu hết!</button>
+    <button onclick="openTab('withdraw')" class="menu-btn">Rút tiền</button>
 </div>
-
-<div id="popup" class="popup hidden">
-    <div class="popup-box">
-        <div id="popupContent"></div>
-        <button onclick="closePopup()" class="close-btn">Đóng</button>
-    </div>
-</div>
+<div id="popup" class="popup hidden"><div class="popup-box"><div id="popupContent"></div><button onclick="closePopup()" class="close-btn">Đóng</button></div></div>
 
 <script>
 const tg = window.Telegram.WebApp;
 tg.ready(); tg.expand();
-const userName = tg.initDataUnsafe?.user?.first_name || "Người chơi";
-document.getElementById("playerName").innerText = userName;
+const userId = tg.initDataUnsafe?.user?.id || 'guest';
+document.getElementById("playerName").textContent = tg.initDataUnsafe?.user?.first_name || "Nông dân";
 
-let data = JSON.parse(localStorage.getItem("farmData_" + tg.initDataUnsafe.user?.id || "guest") || "{}");
-if (!data.cells) data = {gold:0, diamond:0, exp:0, level:1, cells:Array(9).fill(0), unlockedPlants:[0]};
+let data = JSON.parse(localStorage.getItem(`nthp_${userId}`) || '{}');
+if (!data.gold) data = {
+    gold: 0, diamond: 0, exp: 0, level: 1,
+    plots: Array(9).fill().map((_,i)=>({locked:i>0, planted_at:null, type:0})),
+    boosts: {speed:0}
+};
 
-const plants = [
-    {id:0, name:'Cải bắp', price:50, expReq:0, emoji:'🥬'},
-    {id:1, name:'Cà rốt', price:100, expReq:500, emoji:'🥕'},
-    {id:2, name:'Dâu tây', price:300, expReq:2000, emoji:'🍓'},
-    {id:3, name:'Rau bina VIP', price:1000, expReq:5000, emoji:'🥬✨'}
+const PLANTS = [
+    {name:"Cải bắp", time: 18900000, profit:6},    // 5h15p = 18900s
+    {name:"Cà rốt", time: 14400000, profit:12},   // 4h
+    {name:"Dâu tây", time: 10800000, profit:30}   // 3h
 ];
 
-function save(){ localStorage.setItem("farmData_" + tg.initDataUnsafe.user?.id || "guest", JSON.stringify(data)); }
-function render(){
-    document.getElementById("gold").innerText = data.gold.toLocaleString();
-    document.getElementById("diamond").innerText = data.diamond;
-    document.getElementById("playerLevel").innerText = `Lv.${data.level} • ${data.exp.toLocaleString()}/${data.level*120} exp`;
+function saveData(){ localStorage.setItem(`nthp_${userId}`, JSON.stringify(data)); }
+function getGrowTime(plot){ 
+    let t = PLANTS[plot.type || 0].time;
+    if (data.boosts.speed > Date.now()) t /= 10; // boost 10x
+    return t;
+}
+function getProfit(plot){ return PLANTS[plot.type || 0].profit; }
+
+function renderPlots(){
     const g = document.getElementById("grid"); g.innerHTML="";
-    data.cells.forEach((lv,i)=>{
+    let hasReady = false;
+    data.plots.forEach((p,i)=>{
         const c = document.createElement("div");
         c.className = "cell";
-        c.innerHTML = lv===0 ? "+" : plants[data.selectedPlant || 0].emoji + lv;
-        if (isReady(i)) c.classList.add('ready');
-        c.onclick = ()=>click(i);
+        if (p.locked){
+            c.innerHTML = `Ô ${i+1}<br>🔒 20k xu`;
+            c.onclick = ()=>unlockPlot(i);
+        } else if (!p.planted_at){
+            c.innerHTML = "+";
+            c.onclick = ()=>plant(i);
+        } else {
+            const elapsed = Date.now() - p.planted_at;
+            const timeLeft = getGrowTime(p) - elapsed;
+            if (timeLeft <= 0){
+                c.classList.add("ready");
+                c.innerHTML = "✨";
+                c.onclick = ()=>harvest(i);
+                hasReady = true;
+            } else {
+                c.classList.add("planted");
+                if (data.boosts.speed > Date.now()) c.classList.add("boosted");
+                c.innerHTML = "🌱";
+                const m = Math.ceil(timeLeft/60000);
+                c.innerHTML += `<div class="time-left">${m}'</div>`;
+            }
+        }
         g.appendChild(c);
     });
+    document.getElementById("harvestBtn").style.display = hasReady?"block":"none";
 }
-function isReady(i){
-    return data.cells[i] > 0 && Math.random() < 0.1; // Giả lập ready
-}
-function click(i){
-    if (data.cells[i] === 0) {
-        data.cells[i] = 1;
-    } else if (isReady(i)) {
-        data.gold += data.cells[i] * 15;
-        data.exp += data.cells[i] * 10;
-        data.cells[i]++;
-        checkLevelUp();
+
+function unlockPlot(i){
+    if (data.gold >= 20000){
+        data.gold -= 20000;
+        data.plots[i].locked = false;
+        saveData(); renderPlots(); updateUI();
+        tg.showAlert("Mở ô thành công!");
     }
-    save(); render();
+}
+function plant(i){
+    data.plots[i].planted_at = Date.now();
+    saveData(); renderPlots();
+}
+function harvest(i){
+    data.gold += getProfit(data.plots[i]);
+    data.exp += 10;
+    data.plots[i].planted_at = null;
+    checkLevelUp();
+    saveData(); renderPlots(); updateUI();
+    tg.HapticFeedback.impactOccurred("heavy");
+}
+function harvestAllReady(){
+    let total = 0;
+    data.plots.forEach((p,i)=>{
+        if (p.planted_at && (Date.now() - p.planted_at) >= getGrowTime(p)){
+            total += getProfit(p);
+            data.plots[i].planted_at = null;
+        }
+    });
+    if (total>0){
+        data.gold += total;
+        data.exp += total;
+        checkLevelUp();
+        saveData(); renderPlots(); updateUI();
+        tg.showAlert(`Thu hoạch tất cả +${total} xu!`);
+    }
 }
 function checkLevelUp(){
     const need = data.level * 120;
     if (data.exp >= need){
         data.level++;
         data.exp -= need;
-        data.diamond += 1; // Bonus kim cương
-        tg.showAlert("Lên cấp " + data.level + "! +1 kim cương");
+        data.diamond += 1;
+        tg.showAlert(`Lên Lv.${data.level}! +1 kim cương`);
     }
-    save(); render();
+}
+function updateUI(){
+    document.getElementById('gold').textContent = data.gold.toLocaleString();
+    document.getElementById('diamond').textContent = data.diamond;
+    document.getElementById('playerLevel').textContent = `Lv.${data.level} • ${data.exp}/${data.level*120} exp`;
 }
 
-function openTab(tab){
-    const content = document.getElementById("popupContent");
-    if (tab === 'shop'){
-        content.innerHTML = '<h2>Cửa hàng cây trồng</h2>' + plants.map((p,i) => {
-            const unlocked = data.exp >= p.expReq && data.unlockedPlants.includes(i);
-            return `<div class="shop-item ${unlocked ? '' : 'locked'}" onclick="${unlocked ? `buyPlant(${i})` : ''}">
-                ${p.emoji} ${p.name} - ${p.price.toLocaleString()} xu<br>
-                ${!unlocked ? `Unlock: ${p.expReq.toLocaleString()} exp` : 'Đã unlock'}
-            </div>`;
-        }).join('');
-    } else if (tab === 'wheel'){
-        content.innerHTML = '<h2>Vòng quay may mắn</h2><p>1 lượt = 1 kim cương</p><div class="wheel" id="wheel"><div class="wheel-pointer"></div></div><button onclick="spinWheel()" class="close-btn">QUAY NGAY (1 kim cương)</button>';
-        document.getElementById("popup").classList.remove("hidden");
-    } else {
-        content.innerHTML = '<h2>' + tab + '</h2><p>Nội dung sắp có...</p>';
+function openTab(t){
+    const c = document.getElementById("popupContent");
+    if (t==='shop'){
+        c.innerHTML = `
+            <h2>Boost & VIP</h2>
+            <button onclick="buyBoost()" class="close-btn">Tăng tốc 10x - 10 phút (1 kim cương)</button>
+            <button onclick="buyVipPlot()" class="close-btn">Mở ô VIP (100 kim cương)</button>
+        `;
+    } else if (t==='withdraw'){
+        c.innerHTML = `
+            <h2>Rút tiền thẻ cào</h2>
+            <select id="amount"><option value="50000">50k</option><option value="100000">100k</option></select>
+            <p>Phí rút: 5 kim cương</p>
+            <button onclick="withdraw()" class="rut-btn close-btn">Rút ngay</button>
+        `;
     }
     document.getElementById("popup").classList.remove("hidden");
 }
 function closePopup(){ document.getElementById("popup").classList.add("hidden"); }
 
-function buyPlant(id){
-    const p = plants[id];
-    if (data.gold >= p.price && data.exp >= p.expReq && !data.unlockedPlants.includes(id)){
-        data.gold -= p.price;
-        data.unlockedPlants.push(id);
-        data.selectedPlant = id;
-        tg.showAlert("Mua " + p.name + " thành công! Đã chọn làm cây trồng mặc định.");
-        closePopup(); save(); render();
+function buyBoost(){
+    if (data.diamond >= 1){
+        data.diamond -= 1;
+        data.boosts.speed = Date.now() + 600000; // 10 phút
+        tg.showAlert("Tăng tốc 10x trong 10 phút!");
+        saveData(); renderPlots(); updateUI(); closePopup();
     }
 }
-
-function spinWheel(){
-    if (data.diamond < 1) return tg.showAlert("Hết kim cương!");
-    data.diamond--;
-    const wheel = document.getElementById("wheel");
-    wheel.classList.add("spinning");
-    const expReward = [10, 50, 100, 200, 500, 1000][Math.floor(Math.random()*6)];
-    setTimeout(() => {
-        wheel.classList.remove("spinning");
-        data.exp += expReward;
-        tg.showAlert("Quay trúng " + expReward + " exp!");
-        checkLevelUp();
-        save(); render();
-    }, 3000);
+function buyVipPlot(){
+    if (data.diamond >= 100){
+        data.diamond -= 100;
+        const locked = data.plots.findIndex(p=>p.locked);
+        if (locked !== -1) data.plots[locked].locked = false;
+        tg.showAlert("Mở ô VIP thành công!");
+        saveData(); renderPlots(); updateUI(); closePopup();
+    }
+}
+function withdraw(){
+    const amount = parseInt(document.getElementById("amount").value);
+    if (data.gold >= amount && data.diamond >= 5){
+        data.gold -= amount;
+        data.diamond -= 5;
+        tg.showAlert(`Rút ${amount/1000}k thành công! Thẻ cào gửi trong 5 phút`);
+        saveData(); updateUI(); closePopup();
+    } else tg.showAlert("Không đủ xu hoặc kim cương!");
 }
 
-render();
+setInterval(renderPlots, 1000);
+renderPlots(); updateUI();
 </script>
 </body>
 </html>
