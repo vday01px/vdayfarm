@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Farm Mini App</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+
+<body>
+
+<!-- TOP INFO -->
+<div class="top-bar">
+    <div class="player-box">
+        <img src="https://i.imgur.com/8Km9tLL.png" class="avatar">
+        <div class="info">
+            <div class="name" id="playerName">Người chơi</div>
+            <div class="level" id="playerLevel">Lv.1 • 0/100 exp</div>
+        </div>
+    </div>
+
+    <div class="wallet">
+        <img src="https://i.imgur.com/xUdV4gj.png" class="icon">
+        <span id="diamond">0</span>
+    </div>
+
+    <div class="wallet money">
+        <img src="https://i.imgur.com/3apXK4F.png" class="icon">
+        <span id="gold">0</span>
+    </div>
+</div>
+
+
+<!-- FARM GRID -->
+<div class="field">
+    <div id="grid" class="grid"></div>
+</div>
+
+
+<!-- BOTTOM MENU -->
+<div class="bottom-menu">
+    <button onclick="openTab('tasks')" class="menu-btn">Nhiệm vụ</button>
+    <button onclick="openTab('shop')" class="menu-btn">Cửa hàng</button>
+    <button onclick="openTab('plants')" class="menu-btn">Cây trồng</button>
+    <button onclick="openTab('bag')" class="menu-btn">Túi</button>
+</div>
+
+
+<!-- POPUP -->
+<div id="popup" class="popup hidden">
+    <div class="popup-box">
+        <div id="popupContent"></div>
+        <button onclick="closePopup()" class="close-btn">Đóng</button>
+    </div>
+</div>
+
+<script src="game.js"></script>
+</body>
+</html>
