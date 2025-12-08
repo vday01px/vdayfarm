@@ -1,53 +1,83 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Farm Mini App</title>
-    <link rel="stylesheet" href="style.css">
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>VDay Farm</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+body{margin:0;background:#d9f7c4;font-family:Arial,sans-serif}
+.top-bar{display:flex;justify-content:space-between;padding:12px}
+.player-box{display:flex;align-items:center;background:#ffecc7;padding:8px 12px;border-radius:16px}
+.avatar{width:38px;height:38px;border-radius:50%;margin-right:8px}
+.wallet{display:flex;align-items:center;background:#fff8d8;padding:8px 12px;border-radius:16px;font-size:14px;margin-left:6px}
+.wallet img{width:20px;margin-right:6px}
+.field{margin-top:20px;display:flex;justify-content:center}
+.grid{width:320px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.cell{width:100px;height:100px;background:#e3ffc7;border-radius:14px;box-shadow:0 3px 0 #a9c69b;display:flex;justify-content:center;align-items:center;font-size:40px;cursor:pointer;transition:0.2s}
+.cell:hover{transform:scale(1.1)}
+.cell.ready{background:#ffd700;animation:glow 1s infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 20px gold}50%{box-shadow:0 0 40px orange}}
+.bottom-menu{position:fixed;bottom:0;width:100%;background:#fff;padding:10px;display:flex;justify-content:space-around;box-shadow:0 -2px 8px rgba(0,0,0,0.2)}
+.menu-btn{background:#ffe2a7;border:none;padding:12px 20px;border-radius:14px;font-weight:bold}
+</style>
 </head>
 <body>
-    <!-- TOP INFO -->
-    <div class="top-bar">
-        <div class="player-box">
-            <img src="https://i.imgur.com/8Km9tLL.png" class="avatar">
-            <div class="info">
-                <div class="name" id="playerName">Người chơi</div>
-                <div class="level" id="playerLevel">Lv.1 • 0/100 exp</div>
-            </div>
-        </div>
-        <div class="wallet">
-            <img src="https://i.imgur.com/xUdV4gj.png" class="icon">
-            <span id="diamond">0</span>
-        </div>
-        <div class="wallet money">
-            <img src="https://i.imgur.com/3apXK4F.png" class="icon">
-            <span id="gold">0</span>
-        </div>
-    </div>
 
-    <!-- FARM GRID -->
-    <div class="field">
-        <div id="grid" class="grid"></div>
+<div class="top-bar">
+    <div class="player-box">
+        <img src="https://i.imgur.com/8Km9tLL.png" class="avatar">
+        <div><div id="playerName">Đang tải...</div><div id="playerLevel">Lv.1</div></div>
     </div>
+    <div class="wallet"><img src="https://i.imgur.com/xUdV4gj.png"><span id="diamond">0</span></div>
+    <div class="wallet"><img src="https://i.imgur.com/3apXK4F.png"><span id="gold">0</span></div>
+</div>
 
-    <!-- BOTTOM MENU -->
-    <div class="bottom-menu">
-        <button onclick="openTab('tasks')" class="menu-btn">Nhiệm vụ</button>
-        <button onclick="openTab('shop')" class="menu-btn">Cửa hàng</button>
-        <button onclick="openTab('plants')" class="menu-btn">Cây trồng</button>
-        <button onclick="openTab('bag')" class="menu-btn">Túi</button>
-    </div>
+<div class="field"><div id="grid" class="grid"></div></div>
 
-    <!-- POPUP -->
-    <div id="popup" class="popup hidden">
-        <div class="popup-box">
-            <div id="popupContent"></div>
-            <button onclick="closePopup()" class="close-btn">Đóng</button>
-        </div>
-    </div>
+<div class="bottom-menu">
+    <button class="menu-btn">Nhiệm vụ</button>
+    <button class="menu-btn">Cửa hàng</button>
+    <button class="menu-btn">Cây trồng</button>
+    <button class="menu-btn">Túi đồ</button>
+</div>
 
-    <script src="game.js"></script>
+<script>
+// Local Storage thay Supabase (chạy ngon 100% trên iPhone)
+const tg = window.Telegram.WebApp;
+tg.ready(); tg.expand();
+const userName = tg.initDataUnsafe?.user?.first_name || "Người chơi";
+document.getElementById("playerName").innerText = userName;
+
+let data = JSON.parse(localStorage.getItem("farmData") || "{}");
+if (!data.cells) data = {gold:0, diamond:0, exp:0, level:1, cells:Array(9).fill(0)};
+
+function save(){ localStorage.setItem("farmData", JSON.stringify(data)); }
+function render(){
+    document.getElementById("gold").innerText = data.gold;
+    document.getElementById("diamond").innerText = data.diamond;
+    document.getElementById("playerLevel").innerText = `Lv.${data.level} • ${data.exp}/${data.level*120} exp`;
+    const g = document.getElementById("grid"); g.innerHTML="";
+    data.cells.forEach((lv,i)=>{
+        const c = document.createElement("div");
+        c.className = "cell";
+        c.innerHTML = lv===0 ? "+" : "🌱";
+        if (lv>0) c.innerHTML = lv;
+        c.onclick = ()=>click(i);
+        g.appendChild(c);
+    });
+}
+function click(i){
+    if (data.cells[i]===0) data.cells[i]=1;
+    else{
+        data.gold += data.cells[i]*10;
+        data.exp += data.cells[i]*5;
+        data.cells[i]++;
+        if (data.exp >= data.level*120){ data.level++; data.exp=0; tg.showAlert("Lên cấp "+data.level+"!"); }
+    }
+    save(); render();
+}
+render();
+</script>
 </body>
 </html>
