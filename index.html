@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>VDay Farm</title>
+<title>Nông Trại Hạnh Phúc</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 body{margin:0;background:#d9f7c4;font-family:Arial,sans-serif}
@@ -18,8 +18,20 @@ body{margin:0;background:#d9f7c4;font-family:Arial,sans-serif}
 .cell:hover{transform:scale(1.1)}
 .cell.ready{background:#ffd700;animation:glow 1s infinite}
 @keyframes glow{0%,100%{box-shadow:0 0 20px gold}50%{box-shadow:0 0 40px orange}}
+.cell.pest{background:#ff5722}
 .bottom-menu{position:fixed;bottom:0;width:100%;background:#fff;padding:10px;display:flex;justify-content:space-around;box-shadow:0 -2px 8px rgba(0,0,0,0.2)}
 .menu-btn{background:#ffe2a7;border:none;padding:12px 20px;border-radius:14px;font-weight:bold}
+.popup{position:fixed;top:0;left:0;width:100%;height:100%;background:#00000070;display:flex;justify-content:center;align-items:center}
+.hidden{display:none}
+.popup-box{background:white;padding:20px;border-radius:14px;width:80%;max-height:80%;overflow:auto}
+.close-btn{margin-top:12px;width:100%;padding:10px;border-radius:10px;background:#ffe2a7;border:none;font-weight:bold}
+.wheel{position:relative;width:300px;height:300px;border-radius:50%;background:conic-gradient(red 0deg, orange 45deg, yellow 90deg, green 135deg, blue 180deg, purple 225deg, pink 270deg, red 315deg, orange 360deg);animation:spin 3s cubic-bezier(.25,.46,.45,.94) paused;margin:20px auto;transition:0.5s}
+.wheel-pointer{position:absolute;top:-10px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:15px solid transparent;border-right:15px solid transparent;border-top:30px solid lime}
+.wheel.spinning{animation-play-state:running}
+@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+.shop-item{padding:10px;border-bottom:1px solid #eee;cursor:pointer}
+.shop-item:hover{background:#f0f0f0}
+.shop-item.locked{opacity:0.5;cursor:not-allowed}
 </style>
 </head>
 <body>
@@ -36,47 +48,121 @@ body{margin:0;background:#d9f7c4;font-family:Arial,sans-serif}
 <div class="field"><div id="grid" class="grid"></div></div>
 
 <div class="bottom-menu">
-    <button class="menu-btn">Nhiệm vụ</button>
-    <button class="menu-btn">Cửa hàng</button>
-    <button class="menu-btn">Cây trồng</button>
-    <button class="menu-btn">Túi đồ</button>
+    <button onclick="openTab('tasks')" class="menu-btn">Nhiệm vụ</button>
+    <button onclick="openTab('shop')" class="menu-btn">Cửa hàng</button>
+    <button onclick="openTab('wheel')" class="menu-btn">Quay!</button>
+    <button onclick="openTab('bag')" class="menu-btn">Túi</button>
+</div>
+
+<div id="popup" class="popup hidden">
+    <div class="popup-box">
+        <div id="popupContent"></div>
+        <button onclick="closePopup()" class="close-btn">Đóng</button>
+    </div>
 </div>
 
 <script>
-// Local Storage thay Supabase (chạy ngon 100% trên iPhone)
 const tg = window.Telegram.WebApp;
 tg.ready(); tg.expand();
 const userName = tg.initDataUnsafe?.user?.first_name || "Người chơi";
 document.getElementById("playerName").innerText = userName;
 
-let data = JSON.parse(localStorage.getItem("farmData") || "{}");
-if (!data.cells) data = {gold:0, diamond:0, exp:0, level:1, cells:Array(9).fill(0)};
+let data = JSON.parse(localStorage.getItem("farmData_" + tg.initDataUnsafe.user?.id || "guest") || "{}");
+if (!data.cells) data = {gold:0, diamond:0, exp:0, level:1, cells:Array(9).fill(0), unlockedPlants:[0]};
 
-function save(){ localStorage.setItem("farmData", JSON.stringify(data)); }
+const plants = [
+    {id:0, name:'Cải bắp', price:50, expReq:0, emoji:'🥬'},
+    {id:1, name:'Cà rốt', price:100, expReq:500, emoji:'🥕'},
+    {id:2, name:'Dâu tây', price:300, expReq:2000, emoji:'🍓'},
+    {id:3, name:'Rau bina VIP', price:1000, expReq:5000, emoji:'🥬✨'}
+];
+
+function save(){ localStorage.setItem("farmData_" + tg.initDataUnsafe.user?.id || "guest", JSON.stringify(data)); }
 function render(){
-    document.getElementById("gold").innerText = data.gold;
+    document.getElementById("gold").innerText = data.gold.toLocaleString();
     document.getElementById("diamond").innerText = data.diamond;
-    document.getElementById("playerLevel").innerText = `Lv.${data.level} • ${data.exp}/${data.level*120} exp`;
+    document.getElementById("playerLevel").innerText = `Lv.${data.level} • ${data.exp.toLocaleString()}/${data.level*120} exp`;
     const g = document.getElementById("grid"); g.innerHTML="";
     data.cells.forEach((lv,i)=>{
         const c = document.createElement("div");
         c.className = "cell";
-        c.innerHTML = lv===0 ? "+" : "🌱";
-        if (lv>0) c.innerHTML = lv;
+        c.innerHTML = lv===0 ? "+" : plants[data.selectedPlant || 0].emoji + lv;
+        if (isReady(i)) c.classList.add('ready');
         c.onclick = ()=>click(i);
         g.appendChild(c);
     });
 }
+function isReady(i){
+    return data.cells[i] > 0 && Math.random() < 0.1; // Giả lập ready
+}
 function click(i){
-    if (data.cells[i]===0) data.cells[i]=1;
-    else{
-        data.gold += data.cells[i]*10;
-        data.exp += data.cells[i]*5;
+    if (data.cells[i] === 0) {
+        data.cells[i] = 1;
+    } else if (isReady(i)) {
+        data.gold += data.cells[i] * 15;
+        data.exp += data.cells[i] * 10;
         data.cells[i]++;
-        if (data.exp >= data.level*120){ data.level++; data.exp=0; tg.showAlert("Lên cấp "+data.level+"!"); }
+        checkLevelUp();
     }
     save(); render();
 }
+function checkLevelUp(){
+    const need = data.level * 120;
+    if (data.exp >= need){
+        data.level++;
+        data.exp -= need;
+        data.diamond += 1; // Bonus kim cương
+        tg.showAlert("Lên cấp " + data.level + "! +1 kim cương");
+    }
+    save(); render();
+}
+
+function openTab(tab){
+    const content = document.getElementById("popupContent");
+    if (tab === 'shop'){
+        content.innerHTML = '<h2>Cửa hàng cây trồng</h2>' + plants.map((p,i) => {
+            const unlocked = data.exp >= p.expReq && data.unlockedPlants.includes(i);
+            return `<div class="shop-item ${unlocked ? '' : 'locked'}" onclick="${unlocked ? `buyPlant(${i})` : ''}">
+                ${p.emoji} ${p.name} - ${p.price.toLocaleString()} xu<br>
+                ${!unlocked ? `Unlock: ${p.expReq.toLocaleString()} exp` : 'Đã unlock'}
+            </div>`;
+        }).join('');
+    } else if (tab === 'wheel'){
+        content.innerHTML = '<h2>Vòng quay may mắn</h2><p>1 lượt = 1 kim cương</p><div class="wheel" id="wheel"><div class="wheel-pointer"></div></div><button onclick="spinWheel()" class="close-btn">QUAY NGAY (1 kim cương)</button>';
+        document.getElementById("popup").classList.remove("hidden");
+    } else {
+        content.innerHTML = '<h2>' + tab + '</h2><p>Nội dung sắp có...</p>';
+    }
+    document.getElementById("popup").classList.remove("hidden");
+}
+function closePopup(){ document.getElementById("popup").classList.add("hidden"); }
+
+function buyPlant(id){
+    const p = plants[id];
+    if (data.gold >= p.price && data.exp >= p.expReq && !data.unlockedPlants.includes(id)){
+        data.gold -= p.price;
+        data.unlockedPlants.push(id);
+        data.selectedPlant = id;
+        tg.showAlert("Mua " + p.name + " thành công! Đã chọn làm cây trồng mặc định.");
+        closePopup(); save(); render();
+    }
+}
+
+function spinWheel(){
+    if (data.diamond < 1) return tg.showAlert("Hết kim cương!");
+    data.diamond--;
+    const wheel = document.getElementById("wheel");
+    wheel.classList.add("spinning");
+    const expReward = [10, 50, 100, 200, 500, 1000][Math.floor(Math.random()*6)];
+    setTimeout(() => {
+        wheel.classList.remove("spinning");
+        data.exp += expReward;
+        tg.showAlert("Quay trúng " + expReward + " exp!");
+        checkLevelUp();
+        save(); render();
+    }, 3000);
+}
+
 render();
 </script>
 </body>
