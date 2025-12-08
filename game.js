@@ -1,130 +1,174 @@
-// game.js – BẢN CHẠY NGON 100% TRÊN VERCEL (đã fix import)
-const SUPABASE_URL = "https://tsdpylvvhutxgrxpeaza.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_iwHHkOr8GrHnlt1obB5ICQ__WvCqxEA";
+// FARM DATA - SUPABASE VERSION
+let gold = 0;
+let diamond = 0;
+let exp = 0;
+let level = 1;
 
-// Dùng script tag thay vì import (cách này Vercel cho phép)
-const supabaseScript = document.createElement("script");
-supabaseScript.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
-document.head.appendChild(supabaseScript);
+// Supabase setup
+const SUPABASE_URL = 'https://tsdpylvvhutxgrxpeaza.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_iwHHkOr8GrHnlt1obB5ICQ__WvCqxEA';
 
-supabaseScript.onload = async () => {
+// Load Supabase dynamically
+const script = document.createElement('script');
+script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+document.head.appendChild(script);
+
+script.onload = function() {
     const { createClient } = supabase;
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // Telegram
     const tg = window.Telegram.WebApp;
-    tg.ready(); tg.expand();
-    const user = tg.initDataUnsafe?.user || { id: 999999, first_name: "Dev" };
+    tg.ready();
+    tg.expand();
+    const user = tg.initDataUnsafe?.user || { id: Date.now(), first_name: 'Player' };
 
-    let player = null;
-    let cells = [];
+    let cells = Array(9).fill({ lv: 0, timer: 0 });
+    let playerId = null;
 
+    // Init
     async function init() {
-        await loadOrCreatePlayer();
-        await loadOrCreateFarm();
-        document.getElementById("playerName").textContent = user.first_name || "Người chơi";
-        updateUI();
+        await loadPlayer();
+        document.getElementById("playerName").innerText = user.first_name;
         renderFarm();
-        startIdleLoop();
-        setInterval(saveAll, 15000);
+        updateUI();
+        setInterval(updateFarm, 1000);
     }
 
-    async function loadOrCreatePlayer() {
-        let { data } = await supabase.from("users").select("*").eq("tg_id", user.id).single();
+    async function loadPlayer() {
+        let { data } = await supabase.from('users').select('*').eq('tg_id', user.id).single();
         if (!data) {
-            const { data: newUser } = await supabase.from("users").insert({
-                tg_id: user.id, username: user.first_name || "Farmer",
+            const { data: newPlayer } = await supabase.from('users').insert({
+                tg_id: user.id,
+                username: user.first_name,
                 gold: 0, diamond: 0, exp: 0, level: 1
             }).select().single();
-            player = newUser;
+            playerId = newPlayer.id;
+            gold = 0; diamond = 0; exp = 0; level = 1;
         } else {
-            player = data;
-            const offlineSec = Math.floor((new Date() - new Date(player.last_login || new Date())) / 1000);
-            if (offlineSec > 60) {
-                const bonus = Math.floor(offlineSec / 30) * player.level * 3;
-                player.gold += bonus;
-                if (bonus > 0) tg.showAlert(`Offline +${bonus.toLocaleString()} vàng!`);
+            playerId = data.id;
+            gold = data.gold;
+            diamond = data.diamond;
+            exp = data.exp;
+            level = data.level;
+            // Load farms
+            let { data: farmData } = await supabase.from('farms').select('*').eq('user_id', playerId);
+            if (farmData) {
+                farmData.forEach(f => {
+                    const i = f.slot;
+                    cells[i] = { lv: f.lv, timer: f.timer };
+                });
             }
-            player.last_login = new Date().toISOString();
-            await supabase.from("users").update({ last_login: player.last_login, gold: player.gold }).eq("id", player.id);
         }
+        updateUI();
     }
 
-    async function loadOrCreateFarm() {
-        let { data } = await supabase.from("farms").select("*").eq("user_id", player.id).order("slot");
-        if (!data || data.length === 0) {
-            const inserts = [];
-            for (let i = 0; i < 9; i++) inserts.push({ user_id: player.id, slot: i, lv: 0, planted_at: null, has_pest: false });
-            await supabase.from("farms").insert(inserts);
-            const { data: newData } = await supabase.from("farms").select("*").eq("user_id", player.id).order("slot");
-            cells = newData;
-        } else {
-            cells = data;
-        }
-    }
-
+    // Render grid
     function renderFarm() {
         const grid = document.getElementById("grid");
         grid.innerHTML = "";
-        cells.forEach((c, i) => {
+        cells.forEach((cell, i) => {
             const el = document.createElement("div");
             el.className = "cell";
-            el.innerHTML = c.lv === 0 ? "+" : `Lv${c.lv}${c.has_pest ? "" : isReady(c) ? "" : ""}`;
-            if (c.has_pest) el.style.background = "#ff5722";
-            if (isReady(c)) el.style.background = "#ffd700";
+            if (cell.lv === 0) {
+                el.innerHTML = "+";
+            } else {
+                el.innerHTML = `🌱 Lv${cell.lv}`;
+            }
             el.onclick = () => clickCell(i);
             grid.appendChild(el);
         });
     }
 
-    function isReady(c) {
-        return c.planted_at && (Date.now() - new Date(c.planted_at)) / 1000 >= c.lv * 30;
-    }
-
+    // Click cell
     async function clickCell(i) {
-        const c = cells[i];
-        if (c.lv === 0) {
-            c.lv = 1; c.planted_at = new Date().toISOString(); c.has_pest = false;
-        } else if (c.has_pest) {
-            c.has_pest = false; tg.showAlert("Diệt sâu thành công!");
-        } else if (isReady(c)) {
-            player.gold += c.lv * 20;
-            player.exp += c.lv * 5;
-            c.lv += 1; c.planted_at = new Date().toISOString();
-            checkLevelUp();
+        if (cells[i].lv === 0) {
+            cells[i] = { lv: 1, timer: 5 };
         } else {
-            const s = Math.ceil(c.lv * 30 - (Date.now() - new Date(c.planted_at)) / 1000);
-            tg.showAlert(`Còn ${s}s nữa chín!`);
-            return;
+            gold += cells[i].lv * 10;
+            exp += cells[i].lv * 5;
+            cells[i].lv++;
+            checkLevelUp();
         }
-        await supabase.from("farms").update(c).eq("id", c.id);
-        await supabase.from("users").update({ gold: player.gold, exp: player.exp }).eq("id", player.id);
-        renderFarm(); updateUI();
+        // Save
+        await supabase.from('farms').upsert({
+            user_id: playerId,
+            slot: i,
+            lv: cells[i].lv,
+            timer: cells[i].timer
+        });
+        await supabase.from('users').update({ gold, exp, level }).eq('id', playerId);
+        renderFarm();
+        updateUI();
     }
 
-    function startIdleLoop() {
-        setInterval(async () => {
-            let changed = false;
-            for (const c of cells) {
-                if (c.lv > 0 && !c.has_pest && Math.random() < 0.005) { c.has_pest = true; changed = true; }
+    // Update timer
+    function updateFarm() {
+        cells.forEach(cell => {
+            if (cell.lv > 0) {
+                cell.timer--;
+                if (cell.timer <= 0) {
+                    cell.timer = cell.lv * 5; // Reset timer
+                }
             }
-            if (changed) { await supabase.from("farms").upsert(cells); renderFarm(); }
-        }, 3000);
+        });
+        renderFarm();
     }
 
     function checkLevelUp() {
-        const need = player.level * 120;
-        if (player.exp >= need) { player.level++; player.exp -= need; tg.showAlert(`Lên cấp ${player.level}!`); }
+        const need = level * 100;
+        if (exp >= need) {
+            level++;
+            exp = 0;
+            tg.showAlert(`Lên Lv.${level}!`);
+        }
     }
 
     function updateUI() {
-        document.getElementById("gold").textContent = player.gold.toLocaleString();
-        document.getElementById("diamond").textContent = player.diamond;
-        document.getElementById("playerLevel").textContent = `Lv.${player.level} • ${player.exp}/${player.level*120} exp`;
+        document.getElementById("gold").innerText = gold;
+        document.getElementById("diamond").innerText = diamond;
+        document.getElementById("playerLevel").innerText = `Lv.${level} • ${exp}/${level * 100} exp`;
     }
 
-    async function saveAll() {
-        await supabase.from("users").update(player).eq("id", player.id);
+    // Popup
+    function openTab(name) {
+        const box = document.getElementById("popupContent");
+        if (name === "tasks") {
+            box.innerHTML = `
+                <h2>Nhiệm vụ</h2>
+                • Thu hoạch 10 lần: +50 vàng<br>
+                • Nâng cấp 3 cây: +100 vàng
+            `;
+        }
+        if (name === "shop") {
+            box.innerHTML = `
+                <h2>Cửa hàng</h2>
+                • Gói 500 vàng = 1 kim cương<br>
+                • Phân bón tăng tốc 2x = 3 kim cương
+            `;
+        }
+        if (name === "plants") {
+            box.innerHTML = `
+                <h2>Cây trồng</h2>
+                • Cải: Lv1–Lv20<br>
+                • Cà rốt: Lv5 mở khóa<br>
+                • Dâu: Lv15 mở khóa
+            `;
+        }
+        if (name === "bag") {
+            box.innerHTML = `
+                <h2>Túi đồ</h2>
+                • Phân bón: 1<br>
+                • Thuốc diệt sâu: 0
+            `;
+        }
+        document.getElementById("popup").classList.remove("hidden");
     }
 
-    init(); // Bắt đầu game
+    function closePopup() {
+        document.getElementById("popup").classList.add("hidden");
+    }
+
+    // Start
+    init();
 };
