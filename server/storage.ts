@@ -1,230 +1,216 @@
-import {
-  users,
-  games,
-  bets,
-  giftcodes,
-  giftcodeRedemptions,
-  transactions,
-  gameSettings,
-  type User,
-  type InsertUser,
-  type Game,
-  type Bet,
-  type InsertBet,
-  type Giftcode,
-  type InsertGiftcode,
-  type GiftcodeRedemption,
-  type Transaction,
-  type InsertTransaction,
-  type GameSettings,
-  type BetWithUser,
-} from "@shared/schema";
+
 import { db } from "./db";
-import { eq, desc, and, gte, sql } from "drizzle-orm";
+import { users, games, bets, giftcodes, giftcodeRedemptions, type User, type Game, type Bet, type Giftcode } from "../shared/schema";
+import { eq, desc, and, sql } from "drizzle-orm";
 
-export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByTelegramId(telegramId: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  updateUser(id: string, data: Partial<User>): Promise<User | undefined>;
-  getAllUsers(filter?: { fromDate?: Date }): Promise<User[]>;
-
-  getCurrentGame(): Promise<Game | undefined>;
-  createGame(roundNumber: number): Promise<Game>;
-  updateGame(id: string, data: Partial<Game>): Promise<Game | undefined>;
-  getRecentGames(limit: number): Promise<Game[]>;
-
-  createBet(bet: InsertBet & { userId: string; gameId: string }): Promise<Bet>;
-  getBetsByGameId(gameId: string): Promise<BetWithUser[]>;
-  updateBet(id: string, data: Partial<Bet>): Promise<Bet | undefined>;
-
-  createGiftcode(giftcode: InsertGiftcode): Promise<Giftcode>;
-  getGiftcodeByCode(code: string): Promise<Giftcode | undefined>;
-  getAllGiftcodes(): Promise<Giftcode[]>;
-  updateGiftcode(id: string, data: Partial<Giftcode>): Promise<Giftcode | undefined>;
-  deleteGiftcode(id: string): Promise<void>;
-
-  createGiftcodeRedemption(redemption: {
-    giftcodeId: string;
-    userId: string;
-    amountReceived: string;
-    requiredBet: string;
-  }): Promise<GiftcodeRedemption>;
-  getRedemptionsByUserId(userId: string): Promise<GiftcodeRedemption[]>;
-
-  createTransaction(transaction: InsertTransaction): Promise<Transaction>;
-  getTransactionsByUserId(userId: string): Promise<Transaction[]>;
-
-  getSettings(): Promise<GameSettings | undefined>;
-  updateSettings(data: Partial<GameSettings>): Promise<GameSettings>;
-}
-
-export class DatabaseStorage implements IStorage {
-  async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
-  }
-
+export const storage = {
+  // User operations
   async getUserByTelegramId(telegramId: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.telegramId, telegramId));
-    return user || undefined;
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user || undefined;
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
-  }
+  },
 
-  async updateUser(id: string, data: Partial<User>): Promise<User | undefined> {
-    const [user] = await db.update(users).set(data).where(eq(users.id, id)).returning();
-    return user || undefined;
-  }
+  async createUser(userData: typeof users.$inferInsert): Promise<User> {
+    const [user] = await db.insert(users).values(userData).returning();
+    return user;
+  },
 
-  async getAllUsers(filter?: { fromDate?: Date }): Promise<User[]> {
-    if (filter?.fromDate) {
-      return db.select().from(users).where(gte(users.createdAt, filter.fromDate)).orderBy(desc(users.createdAt));
-    }
-    return db.select().from(users).orderBy(desc(users.createdAt));
-  }
+  async updateUserBalance(userId: number, amount: string): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({ balance: sql`${users.balance} + ${amount}` })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  },
 
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users).orderBy(desc(users.createdAt));
+  },
+
+  // Game operations
   async getCurrentGame(): Promise<Game | undefined> {
     const [game] = await db
       .select()
       .from(games)
-      .where(eq(games.status, "betting"))
+      .where(eq(games.status, "waiting"))
       .orderBy(desc(games.createdAt))
       .limit(1);
     
-    if (game) return game;
-
-    const [latestGame] = await db
-      .select()
-      .from(games)
-      .orderBy(desc(games.createdAt))
-      .limit(1);
+    if (!game) {
+      // Create new game if none exists
+      const [newGame] = await db.insert(games).values({
+        status: "waiting",
+        startTime: new Date(),
+      }).returning();
+      return newGame;
+    }
     
-    return latestGame || undefined;
-  }
+    return game;
+  },
 
-  async createGame(roundNumber: number): Promise<Game> {
+  async getGameById(gameId: number): Promise<Game | undefined> {
+    const [game] = await db.select().from(games).where(eq(games.id, gameId));
+    return game;
+  },
+
+  async updateGameStatus(gameId: number, status: "waiting" | "rolling" | "finished"): Promise<Game> {
     const [game] = await db
-      .insert(games)
-      .values({ roundNumber, status: "betting" })
+      .update(games)
+      .set({ status })
+      .where(eq(games.id, gameId))
       .returning();
     return game;
-  }
+  },
 
-  async updateGame(id: string, data: Partial<Game>): Promise<Game | undefined> {
-    const [game] = await db.update(games).set(data).where(eq(games.id, id)).returning();
-    return game || undefined;
-  }
+  async setGameResult(gameId: number, dice1: number, dice2: number, dice3: number): Promise<Game> {
+    const total = dice1 + dice2 + dice3;
+    const result = total >= 11 ? "tai" : "xiu";
+    
+    const [game] = await db
+      .update(games)
+      .set({
+        dice1,
+        dice2,
+        dice3,
+        total,
+        result,
+        status: "finished",
+        endTime: new Date(),
+      })
+      .where(eq(games.id, gameId))
+      .returning();
+    
+    return game;
+  },
 
-  async getRecentGames(limit: number): Promise<Game[]> {
-    return db
+  async getRecentGames(limit: number = 10): Promise<Game[]> {
+    return await db
       .select()
       .from(games)
       .where(eq(games.status, "finished"))
       .orderBy(desc(games.createdAt))
       .limit(limit);
-  }
+  },
 
-  async createBet(bet: InsertBet & { userId: string; gameId: string }): Promise<Bet> {
-    const [newBet] = await db.insert(bets).values(bet).returning();
-    return newBet;
-  }
+  // Bet operations
+  async createBet(betData: typeof bets.$inferInsert): Promise<Bet> {
+    const [bet] = await db.insert(bets).values(betData).returning();
+    return bet;
+  },
 
-  async getBetsByGameId(gameId: string): Promise<BetWithUser[]> {
-    const result = await db
-      .select()
+  async getBetsByGameId(gameId: number): Promise<(Bet & { user: User })[]> {
+    return await db
+      .select({
+        id: bets.id,
+        userId: bets.userId,
+        gameId: bets.gameId,
+        betType: bets.betType,
+        amount: bets.amount,
+        payout: bets.payout,
+        createdAt: bets.createdAt,
+        user: users,
+      })
       .from(bets)
-      .leftJoin(users, eq(bets.userId, users.id))
-      .where(eq(bets.gameId, gameId));
-    
-    return result.map((r) => ({
-      ...r.bets,
-      user: r.users!,
-    }));
-  }
+      .innerJoin(users, eq(bets.userId, users.id))
+      .where(eq(bets.gameId, gameId))
+      .orderBy(desc(bets.createdAt));
+  },
 
-  async updateBet(id: string, data: Partial<Bet>): Promise<Bet | undefined> {
-    const [bet] = await db.update(bets).set(data).where(eq(bets.id, id)).returning();
-    return bet || undefined;
-  }
+  async updateBetPayout(betId: number, payout: string): Promise<Bet> {
+    const [bet] = await db
+      .update(bets)
+      .set({ payout })
+      .where(eq(bets.id, betId))
+      .returning();
+    return bet;
+  },
 
-  async createGiftcode(giftcode: InsertGiftcode): Promise<Giftcode> {
-    const [gc] = await db.insert(giftcodes).values(giftcode).returning();
-    return gc;
-  }
+  async processBetsForGame(gameId: number): Promise<void> {
+    const game = await this.getGameById(gameId);
+    if (!game || !game.result) return;
+
+    const gameBets = await db.select().from(bets).where(eq(bets.gameId, gameId));
+
+    for (const bet of gameBets) {
+      if (bet.betType === game.result) {
+        // Win: payout = bet amount * 2
+        const payout = (parseFloat(bet.amount) * 1.95).toFixed(2);
+        await this.updateBetPayout(bet.id, payout);
+        await this.updateUserBalance(bet.userId, payout);
+      } else {
+        // Lose: payout = 0
+        await this.updateBetPayout(bet.id, "0");
+      }
+    }
+  },
+
+  // Giftcode operations
+  async createGiftcode(giftcodeData: typeof giftcodes.$inferInsert): Promise<Giftcode> {
+    const [giftcode] = await db.insert(giftcodes).values(giftcodeData).returning();
+    return giftcode;
+  },
 
   async getGiftcodeByCode(code: string): Promise<Giftcode | undefined> {
-    const [gc] = await db.select().from(giftcodes).where(eq(giftcodes.code, code));
-    return gc || undefined;
-  }
+    const [giftcode] = await db.select().from(giftcodes).where(eq(giftcodes.code, code));
+    return giftcode;
+  },
+
+  async redeemGiftcode(userId: number, code: string): Promise<{ success: boolean; message: string; amount?: string }> {
+    const giftcode = await this.getGiftcodeByCode(code);
+    
+    if (!giftcode) {
+      return { success: false, message: "Mã quà tặng không tồn tại" };
+    }
+
+    if (!giftcode.isActive) {
+      return { success: false, message: "Mã quà tặng đã bị vô hiệu hóa" };
+    }
+
+    if (giftcode.expiresAt && new Date(giftcode.expiresAt) < new Date()) {
+      return { success: false, message: "Mã quà tặng đã hết hạn" };
+    }
+
+    if (giftcode.currentUses >= giftcode.maxUses) {
+      return { success: false, message: "Mã quà tặng đã hết lượt sử dụng" };
+    }
+
+    // Check if user already redeemed
+    const [existing] = await db
+      .select()
+      .from(giftcodeRedemptions)
+      .where(
+        and(
+          eq(giftcodeRedemptions.userId, userId),
+          eq(giftcodeRedemptions.giftcodeId, giftcode.id)
+        )
+      );
+
+    if (existing) {
+      return { success: false, message: "Bạn đã sử dụng mã này rồi" };
+    }
+
+    // Redeem giftcode
+    await db.insert(giftcodeRedemptions).values({
+      userId,
+      giftcodeId: giftcode.id,
+    });
+
+    await db
+      .update(giftcodes)
+      .set({ currentUses: sql`${giftcodes.currentUses} + 1` })
+      .where(eq(giftcodes.id, giftcode.id));
+
+    await this.updateUserBalance(userId, giftcode.amount);
+
+    return { success: true, message: "Nhận quà thành công!", amount: giftcode.amount };
+  },
 
   async getAllGiftcodes(): Promise<Giftcode[]> {
-    return db.select().from(giftcodes).orderBy(desc(giftcodes.createdAt));
-  }
+    return await db.select().from(giftcodes).orderBy(desc(giftcodes.createdAt));
+  },
 
-  async updateGiftcode(id: string, data: Partial<Giftcode>): Promise<Giftcode | undefined> {
-    const [gc] = await db.update(giftcodes).set(data).where(eq(giftcodes.id, id)).returning();
-    return gc || undefined;
-  }
-
-  async deleteGiftcode(id: string): Promise<void> {
-    await db.delete(giftcodes).where(eq(giftcodes.id, id));
-  }
-
-  async createGiftcodeRedemption(redemption: {
-    giftcodeId: string;
-    userId: string;
-    amountReceived: string;
-    requiredBet: string;
-  }): Promise<GiftcodeRedemption> {
-    const [r] = await db.insert(giftcodeRedemptions).values(redemption).returning();
-    return r;
-  }
-
-  async getRedemptionsByUserId(userId: string): Promise<GiftcodeRedemption[]> {
-    return db.select().from(giftcodeRedemptions).where(eq(giftcodeRedemptions.userId, userId));
-  }
-
-  async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
-    const [t] = await db.insert(transactions).values(transaction).returning();
-    return t;
-  }
-
-  async getTransactionsByUserId(userId: string): Promise<Transaction[]> {
-    return db.select().from(transactions).where(eq(transactions.userId, userId)).orderBy(desc(transactions.createdAt));
-  }
-
-  async getSettings(): Promise<GameSettings | undefined> {
-    const [settings] = await db.select().from(gameSettings).where(eq(gameSettings.id, "default"));
-    return settings || undefined;
-  }
-
-  async updateSettings(data: Partial<GameSettings>): Promise<GameSettings> {
-    const existing = await this.getSettings();
-    if (existing) {
-      const [settings] = await db
-        .update(gameSettings)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(gameSettings.id, "default"))
-        .returning();
-      return settings;
-    } else {
-      const [settings] = await db
-        .insert(gameSettings)
-        .values({ id: "default", ...data })
-        .returning();
-      return settings;
-    }
-  }
-}
-
-export const storage = new DatabaseStorage();
+  async deleteGiftcode(giftcodeId: number): Promise<void> {
+    await db.delete(giftcodes).where(eq(giftcodes.id, giftcodeId));
+  },
+};
