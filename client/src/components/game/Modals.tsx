@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Wallet, ArrowDownToLine, Gift, AlertTriangle } from "lucide-react";
+import { X, Wallet, ArrowDownToLine, Gift, AlertTriangle, History, TrendingUp, Dice1, Dice2, Dice3, Dice4, Dice5, Dice6 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useGameStore, formatCurrency } from "@/lib/gameStore";
+import { useGameStore, formatCurrency, type BetSide } from "@/lib/gameStore";
 import { openTelegramChat } from "@/lib/telegram";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import type { Game } from "@shared/schema";
 
 function ModalWrapper({
   isOpen,
@@ -257,6 +260,255 @@ export function LockedAccountModal() {
   );
 }
 
+function DiceIcon({ value, className }: { value: number; className?: string }) {
+  const icons = [Dice1, Dice2, Dice3, Dice4, Dice5, Dice6];
+  const Icon = icons[Math.min(Math.max(value - 1, 0), 5)];
+  return <Icon className={className} />;
+}
+
+export function HistoryModal() {
+  const { activeModal, setActiveModal, resultHistory } = useGameStore();
+  const isOpen = activeModal === "history";
+
+  const { data: serverHistory } = useQuery<Game[]>({
+    queryKey: ["/api/games/history"],
+    enabled: isOpen,
+  });
+
+  const displayHistory = serverHistory || resultHistory.map((r, i) => ({
+    id: r.gameId,
+    dice1: r.dice[0],
+    dice2: r.dice[1],
+    dice3: r.dice[2],
+    total: r.total,
+    result: r.result,
+    createdAt: new Date().toISOString(),
+  }));
+
+  return (
+    <ModalWrapper
+      isOpen={isOpen}
+      onClose={() => setActiveModal(null)}
+      title="Lịch sử kết quả"
+      icon={History}
+    >
+      <div className="space-y-2 max-h-[60vh] overflow-y-auto" data-testid="history-modal">
+        {displayHistory.length === 0 ? (
+          <p className="text-center text-muted-foreground py-4">Chưa có lịch sử</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-card">
+              <tr className="border-b border-border">
+                <th className="text-left py-2 px-1 text-muted-foreground font-medium">Phiên</th>
+                <th className="text-center py-2 px-1 text-muted-foreground font-medium">Xúc xắc</th>
+                <th className="text-center py-2 px-1 text-muted-foreground font-medium">Tổng</th>
+                <th className="text-right py-2 px-1 text-muted-foreground font-medium">Kết quả</th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayHistory.slice(0, 50).map((game, index) => (
+                <tr 
+                  key={game.id || index} 
+                  className="border-b border-border/50"
+                  data-testid={`history-row-${index}`}
+                >
+                  <td className="py-2 px-1 font-mono text-xs">#{game.id}</td>
+                  <td className="py-2 px-1">
+                    <div className="flex items-center justify-center gap-1">
+                      <DiceIcon value={game.dice1 || 1} className="w-4 h-4" />
+                      <DiceIcon value={game.dice2 || 1} className="w-4 h-4" />
+                      <DiceIcon value={game.dice3 || 1} className="w-4 h-4" />
+                    </div>
+                  </td>
+                  <td className="py-2 px-1 text-center font-mono font-bold">{game.total}</td>
+                  <td className="py-2 px-1 text-right">
+                    <span className={cn(
+                      "px-2 py-0.5 rounded text-xs font-bold uppercase",
+                      game.result === "tai" ? "bg-tai/20 text-tai" : "bg-xiu/20 text-xiu"
+                    )}>
+                      {game.result === "tai" ? "Tài" : "Xỉu"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </ModalWrapper>
+  );
+}
+
+export function SoiCauModal() {
+  const { activeModal, setActiveModal, resultHistory } = useGameStore();
+  const isOpen = activeModal === "soicau";
+
+  const { data: serverHistory } = useQuery<Game[]>({
+    queryKey: ["/api/games/history"],
+    enabled: isOpen,
+  });
+
+  const history = serverHistory?.map(g => ({
+    result: g.result as BetSide,
+    total: g.total || 0,
+  })) || resultHistory;
+
+  const taiCount = history.filter(r => r.result === "tai").length;
+  const xiuCount = history.filter(r => r.result === "xiu").length;
+  const totalGames = history.length;
+
+  const taiPercentage = totalGames > 0 ? Math.round((taiCount / totalGames) * 100) : 50;
+  const xiuPercentage = totalGames > 0 ? Math.round((xiuCount / totalGames) * 100) : 50;
+
+  const getStreaks = () => {
+    if (history.length === 0) return { currentStreak: 0, currentType: null, maxTaiStreak: 0, maxXiuStreak: 0 };
+    
+    let currentStreak = 1;
+    let currentType = history[0]?.result;
+    let maxTaiStreak = 0;
+    let maxXiuStreak = 0;
+    let tempStreak = 1;
+    let tempType = history[0]?.result;
+
+    for (let i = 1; i < history.length; i++) {
+      if (history[i].result === tempType) {
+        tempStreak++;
+      } else {
+        if (tempType === "tai") maxTaiStreak = Math.max(maxTaiStreak, tempStreak);
+        else if (tempType === "xiu") maxXiuStreak = Math.max(maxXiuStreak, tempStreak);
+        tempType = history[i].result;
+        tempStreak = 1;
+      }
+    }
+    if (tempType === "tai") maxTaiStreak = Math.max(maxTaiStreak, tempStreak);
+    else if (tempType === "xiu") maxXiuStreak = Math.max(maxXiuStreak, tempStreak);
+
+    for (let i = 1; i < history.length && history[i].result === currentType; i++) {
+      currentStreak++;
+    }
+
+    return { currentStreak, currentType, maxTaiStreak, maxXiuStreak };
+  };
+
+  const streaks = getStreaks();
+
+  const renderPatternGrid = () => {
+    const rows = 5;
+    const cols = 10;
+    const grid: Array<Array<BetSide | null>> = Array(rows).fill(null).map(() => Array(cols).fill(null));
+    
+    let col = 0;
+    let row = 0;
+    let lastResult: BetSide | null = null;
+    
+    for (let i = history.length - 1; i >= 0 && col < cols; i--) {
+      const result = history[i].result;
+      if (result !== lastResult && lastResult !== null) {
+        col++;
+        row = 0;
+        if (col >= cols) break;
+      }
+      if (row < rows) {
+        grid[row][col] = result;
+        row++;
+      }
+      lastResult = result;
+    }
+
+    return (
+      <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+        {Array(rows).fill(null).map((_, rowIdx) => (
+          Array(cols).fill(null).map((_, colIdx) => {
+            const cell = grid[rowIdx][cols - 1 - colIdx];
+            return (
+              <div
+                key={`${rowIdx}-${colIdx}`}
+                className={cn(
+                  "w-5 h-5 rounded-full border",
+                  cell === "tai" && "bg-tai border-tai",
+                  cell === "xiu" && "bg-xiu border-xiu",
+                  !cell && "border-border bg-muted/30"
+                )}
+              />
+            );
+          })
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <ModalWrapper
+      isOpen={isOpen}
+      onClose={() => setActiveModal(null)}
+      title="Soi Cầu"
+      icon={TrendingUp}
+    >
+      <div className="space-y-4" data-testid="soicau-modal">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="p-3 rounded-lg bg-tai/10 border border-tai/30">
+            <div className="text-xs text-muted-foreground mb-1">Tài</div>
+            <div className="text-2xl font-bold text-tai">{taiCount}</div>
+            <div className="text-sm text-muted-foreground">{taiPercentage}%</div>
+          </div>
+          <div className="p-3 rounded-lg bg-xiu/10 border border-xiu/30">
+            <div className="text-xs text-muted-foreground mb-1">Xỉu</div>
+            <div className="text-2xl font-bold text-xiu">{xiuCount}</div>
+            <div className="text-sm text-muted-foreground">{xiuPercentage}%</div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-tai transition-all duration-300"
+              style={{ width: `${taiPercentage}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="p-3 bg-muted/50 rounded-lg">
+          <div className="text-sm font-medium mb-2">Chuỗi hiện tại</div>
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              "px-3 py-1 rounded font-bold",
+              streaks.currentType === "tai" ? "bg-tai text-white" : "bg-xiu text-white"
+            )}>
+              {streaks.currentType === "tai" ? "Tài" : "Xỉu"} x{streaks.currentStreak}
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-sm font-medium mb-2">Biểu đồ kết quả</div>
+          {renderPatternGrid()}
+          <div className="flex items-center justify-center gap-4 mt-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-tai" />
+              <span>Tài</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-xiu" />
+              <span>Xỉu</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 text-center text-sm">
+          <div className="p-2 bg-muted/30 rounded">
+            <div className="text-muted-foreground">Chuỗi Tài dài nhất</div>
+            <div className="font-bold text-tai">{streaks.maxTaiStreak}</div>
+          </div>
+          <div className="p-2 bg-muted/30 rounded">
+            <div className="text-muted-foreground">Chuỗi Xỉu dài nhất</div>
+            <div className="font-bold text-xiu">{streaks.maxXiuStreak}</div>
+          </div>
+        </div>
+      </div>
+    </ModalWrapper>
+  );
+}
+
 export function AllModals() {
   return (
     <>
@@ -264,6 +516,8 @@ export function AllModals() {
       <WithdrawModal />
       <GiftcodeModal />
       <LockedAccountModal />
+      <HistoryModal />
+      <SoiCauModal />
     </>
   );
 }

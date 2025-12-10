@@ -30,23 +30,32 @@ export const storage = {
 
   // Game operations
   async getCurrentGame(): Promise<Game | undefined> {
-    const [game] = await db
+    // First try to get a waiting game
+    const [waitingGame] = await db
       .select()
       .from(games)
       .where(eq(games.status, "waiting"))
       .orderBy(desc(games.createdAt))
       .limit(1);
     
-    if (!game) {
-      // Create new game if none exists
-      const [newGame] = await db.insert(games).values({
-        status: "waiting",
-        startTime: new Date(),
-      }).returning();
-      return newGame;
-    }
+    if (waitingGame) return waitingGame;
     
-    return game;
+    // Then try to get the most recent finished game (for showing results)
+    const [finishedGame] = await db
+      .select()
+      .from(games)
+      .where(eq(games.status, "finished"))
+      .orderBy(desc(games.createdAt))
+      .limit(1);
+    
+    if (finishedGame) return finishedGame;
+    
+    // Create new game if none exists
+    const [newGame] = await db.insert(games).values({
+      status: "waiting",
+      startTime: new Date(),
+    }).returning();
+    return newGame;
   },
 
   async getGameById(gameId: number): Promise<Game | undefined> {
@@ -91,6 +100,14 @@ export const storage = {
       .where(eq(games.status, "finished"))
       .orderBy(desc(games.createdAt))
       .limit(limit);
+  },
+
+  async createNewGame(): Promise<Game> {
+    const [newGame] = await db.insert(games).values({
+      status: "waiting",
+      startTime: new Date(),
+    }).returning();
+    return newGame;
   },
 
   // Bet operations

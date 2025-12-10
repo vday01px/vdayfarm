@@ -31,16 +31,72 @@ export async function registerRoutes(
     next();
   };
 
+  const ADMIN_USERNAME = "vdaychim99";
+  
+  const isUserAdmin = (user: any): boolean => {
+    if (!user) return false;
+    if (user.isAdmin) return true;
+    if (user.username === ADMIN_USERNAME || user.username === `@${ADMIN_USERNAME}`) return true;
+    return false;
+  };
+
   const requireAdmin = (req: any, res: any, next: any) => {
-    if (!req.user?.isAdmin) {
+    if (!isUserAdmin(req.user)) {
       return res.status(403).json({ message: "Forbidden" });
     }
     next();
   };
 
+  // Game settings
+  let gameSettings = {
+    manualMode: false,
+    bettingDuration: 30,
+    waitDuration: 15,
+  };
+
+  // Game loop logic
+  const BETTING_DURATION = 30 * 1000;
+  const WAIT_DURATION = 15 * 1000;
+
+  const checkAndProgressGame = async () => {
+    if (gameSettings.manualMode) return;
+
+    try {
+      const currentGame = await storage.getCurrentGame();
+      if (!currentGame) return;
+
+      const now = Date.now();
+      const createdAt = new Date(currentGame.createdAt).getTime();
+      const elapsed = now - createdAt;
+
+      if (currentGame.status === "waiting" && elapsed >= BETTING_DURATION) {
+        await storage.updateGameStatus(currentGame.id, "rolling");
+        
+        const dice1 = Math.floor(Math.random() * 6) + 1;
+        const dice2 = Math.floor(Math.random() * 6) + 1;
+        const dice3 = Math.floor(Math.random() * 6) + 1;
+        
+        await storage.setGameResult(currentGame.id, dice1, dice2, dice3);
+        await storage.processBetsForGame(currentGame.id);
+      } else if (currentGame.status === "finished" && currentGame.endTime) {
+        const endTime = new Date(currentGame.endTime).getTime();
+        const waitElapsed = now - endTime;
+        
+        if (waitElapsed >= WAIT_DURATION) {
+          await storage.createNewGame();
+        }
+      }
+    } catch (error) {
+      console.error("Game loop error:", error);
+    }
+  };
+
+  setInterval(checkAndProgressGame, 1000);
+
   // Auth routes
   app.get("/api/auth/me", requireAuth, async (req: any, res) => {
-    res.json(req.user);
+    const userData = { ...req.user, isAdmin: isUserAdmin(req.user) };
+    res.json(userData);
   });
 
   // Game routes
@@ -241,6 +297,37 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ message: "Error deleting giftcode" });
+    }
+  });
+
+  // Game settings routes
+  app.get("/api/admin/settings", requireAuth, requireAdmin, async (_req, res) => {
+    res.json(gameSettings);
+  });
+
+  app.post("/api/admin/settings", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const schema = z.object({
+        manualMode: z.boolean().optional(),
+        bettingDuration: z.number().optional(),
+        waitDuration: z.number().optional(),
+      });
+
+      const data = schema.parse(req.body);
+      gameSettings = { ...gameSettings, ...data };
+      res.json(gameSettings);
+    } catch (error) {
+      res.status(400).json({ message: "Error updating settings" });
+    }
+  });
+
+  // New game route for admin
+  app.post("/api/admin/games/new", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      const game = await storage.createNewGame();
+      res.json(game);
+    } catch (error) {
+      res.status(500).json({ message: "Error creating new game" });
     }
   });
 
