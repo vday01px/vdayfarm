@@ -12,9 +12,11 @@ interface GameState {
   betAmount: number;
   isRolling: boolean;
   countdown: number;
-  resultHistory: Array<{ result: BetSide; total: number }>;
+  waitCountdown: number;
+  isManualMode: boolean;
+  resultHistory: Array<{ result: BetSide; total: number; dice: [number, number, number]; gameId: number }>;
   isMenuOpen: boolean;
-  activeModal: "deposit" | "withdraw" | "giftcode" | "locked" | null;
+  activeModal: "deposit" | "withdraw" | "giftcode" | "locked" | "history" | "soicau" | null;
 
   setUser: (user: User | null) => void;
   setCurrentGame: (game: Game | null) => void;
@@ -25,9 +27,11 @@ interface GameState {
   addToBetAmount: (amount: number) => void;
   setIsRolling: (rolling: boolean) => void;
   setCountdown: (countdown: number) => void;
-  addResultToHistory: (result: BetSide, total: number) => void;
+  setWaitCountdown: (countdown: number) => void;
+  setManualMode: (manual: boolean) => void;
+  addResultToHistory: (result: BetSide, total: number, dice: [number, number, number], gameId: number) => void;
   setMenuOpen: (open: boolean) => void;
-  setActiveModal: (modal: "deposit" | "withdraw" | "giftcode" | "locked" | null) => void;
+  setActiveModal: (modal: "deposit" | "withdraw" | "giftcode" | "locked" | "history" | "soicau" | null) => void;
   resetBet: () => void;
 }
 
@@ -40,6 +44,8 @@ export const useGameStore = create<GameState>((set) => ({
   betAmount: 0,
   isRolling: false,
   countdown: 30,
+  waitCountdown: 0,
+  isManualMode: false,
   resultHistory: [],
   isMenuOpen: false,
   activeModal: null,
@@ -54,16 +60,18 @@ export const useGameStore = create<GameState>((set) => ({
     set((state) => ({ betAmount: state.betAmount + amount })),
   setIsRolling: (rolling) => set({ isRolling: rolling }),
   setCountdown: (countdown) => set({ countdown }),
-  addResultToHistory: (result, total) =>
+  setWaitCountdown: (countdown) => set({ waitCountdown: countdown }),
+  setManualMode: (manual) => set({ isManualMode: manual }),
+  addResultToHistory: (result, total, dice, gameId) =>
     set((state) => ({
-      resultHistory: [...state.resultHistory.slice(-14), { result, total }],
+      resultHistory: [...state.resultHistory.slice(-49), { result, total, dice, gameId }],
     })),
   setMenuOpen: (open) => set({ isMenuOpen: open }),
   setActiveModal: (modal) => set({ activeModal: modal }),
   resetBet: () => set({ selectedSide: null, betAmount: 0 }),
 }));
 
-export const CHIP_VALUES = [10, 20, 30, 50, 100, 200, 300, 500];
+export const CHIP_VALUES = [10, 20, 50, 100, 200, 500];
 
 export function formatCurrency(amount: number | string): string {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;

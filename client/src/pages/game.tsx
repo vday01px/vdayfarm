@@ -21,13 +21,14 @@ export default function GamePage() {
     setCurrentGame,
     setBets,
     setCountdown,
+    setWaitCountdown,
     setIsRolling,
     addResultToHistory,
     selectedSide,
     betAmount,
     resetBet,
-    setActiveModal,
     user,
+    resultHistory,
   } = useGameStore();
   const { toast } = useToast();
 
@@ -65,12 +66,20 @@ export default function GamePage() {
       } else if (currentGameData.status === "finished" && currentGameData.total) {
         setIsRolling(false);
         const result = getResultFromTotal(currentGameData.total);
-        addResultToHistory(result, currentGameData.total);
+        const dice: [number, number, number] = [
+          currentGameData.dice1 || 1,
+          currentGameData.dice2 || 1,
+          currentGameData.dice3 || 1,
+        ];
+        const alreadyInHistory = resultHistory.some(r => r.gameId === currentGameData.id);
+        if (!alreadyInHistory) {
+          addResultToHistory(result, currentGameData.total, dice, currentGameData.id);
+        }
       } else {
         setIsRolling(false);
       }
     }
-  }, [currentGameData, setCurrentGame, setIsRolling, addResultToHistory]);
+  }, [currentGameData, setCurrentGame, setIsRolling, addResultToHistory, resultHistory]);
 
   useEffect(() => {
     if (betsData) {
@@ -79,22 +88,40 @@ export default function GamePage() {
   }, [betsData, setBets]);
 
   useEffect(() => {
-    if (!currentGameData || currentGameData.status !== "waiting") return;
-
-    const createdAt = new Date(currentGameData.createdAt).getTime();
-    const bettingDuration = 30 * 1000;
+    if (!currentGameData) return;
     
-    const updateCountdown = () => {
-      const now = Date.now();
-      const elapsed = now - createdAt;
-      const remaining = Math.max(0, Math.ceil((bettingDuration - elapsed) / 1000));
-      setCountdown(remaining);
-    };
+    if (currentGameData.status === "waiting") {
+      const createdAt = new Date(currentGameData.createdAt).getTime();
+      const bettingDuration = 30 * 1000;
+      
+      const updateCountdown = () => {
+        const now = Date.now();
+        const elapsed = now - createdAt;
+        const remaining = Math.max(0, Math.ceil((bettingDuration - elapsed) / 1000));
+        setCountdown(remaining);
+        setWaitCountdown(0);
+      };
 
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [currentGameData, setCountdown]);
+      updateCountdown();
+      const interval = setInterval(updateCountdown, 1000);
+      return () => clearInterval(interval);
+    } else if (currentGameData.status === "finished" && currentGameData.endTime) {
+      const endTime = new Date(currentGameData.endTime).getTime();
+      const waitDuration = 15 * 1000;
+      
+      const updateWaitCountdown = () => {
+        const now = Date.now();
+        const elapsed = now - endTime;
+        const remaining = Math.max(0, Math.ceil((waitDuration - elapsed) / 1000));
+        setWaitCountdown(remaining);
+        setCountdown(0);
+      };
+
+      updateWaitCountdown();
+      const interval = setInterval(updateWaitCountdown, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [currentGameData, setCountdown, setWaitCountdown]);
 
   const placeBetMutation = useMutation({
     mutationFn: async (data: { side: "tai" | "xiu"; amount: number }) => {

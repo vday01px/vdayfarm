@@ -5,7 +5,10 @@ export function ChipSelector() {
   const { selectedChip, setSelectedChip } = useGameStore();
 
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2 p-3" data-testid="chip-selector">
+    <div 
+      className="flex flex-wrap items-center justify-center gap-2 p-4 rounded-xl border border-casino-gold/30 bg-gradient-to-b from-card/80 to-background/80 backdrop-blur-sm" 
+      data-testid="chip-selector"
+    >
       {CHIP_VALUES.map((value) => (
         <button
           key={value}

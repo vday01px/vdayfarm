@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useGameStore, formatCurrency, type BetSide } from "@/lib/gameStore";
 import { DiceGroup } from "./Dice";
 import { cn } from "@/lib/utils";
@@ -56,7 +56,7 @@ function BettingSection({
         </div>
         <Button
           variant="secondary"
-          className="w-full bg-white/20 hover:bg-white/30 text-white border-white/30"
+          className="w-full bg-white/20 text-white border-white/30"
           disabled={isDisabled}
           data-testid={`button-bet-${side}`}
         >
@@ -64,6 +64,90 @@ function BettingSection({
         </Button>
       </div>
     </motion.div>
+  );
+}
+
+function DiceDisplay() {
+  const { currentGame, countdown, isRolling } = useGameStore();
+  
+  const dice: [number, number, number] = currentGame?.dice1 && currentGame?.dice2 && currentGame?.dice3
+    ? [currentGame.dice1, currentGame.dice2, currentGame.dice3]
+    : [1, 1, 1];
+  
+  const total = currentGame?.total || 0;
+  const gameStatus = currentGame?.status || "waiting";
+  const result = currentGame?.result;
+  const showBowl = gameStatus === "waiting";
+  const showResult = gameStatus === "finished" && total > 0;
+  const waitCountdown = useGameStore.getState().waitCountdown || 0;
+
+  return (
+    <div className="relative flex flex-col items-center justify-center">
+      <motion.div
+        className={cn(
+          "relative w-28 h-28 rounded-full flex flex-col items-center justify-center",
+          "border-4 shadow-lg",
+          showResult 
+            ? result === "tai" 
+              ? "bg-gradient-to-b from-red-500 to-red-700 border-red-400"
+              : "bg-gradient-to-b from-blue-500 to-blue-700 border-blue-400"
+            : "bg-gradient-to-b from-casino-gold to-casino-gold-dark border-casino-gold-light"
+        )}
+        animate={isRolling ? { rotate: 360 } : { rotate: 0 }}
+        transition={isRolling ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
+        data-testid="dice-display"
+      >
+        <AnimatePresence mode="wait">
+          {showBowl ? (
+            <motion.div
+              key="bowl"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="flex flex-col items-center justify-center"
+            >
+              <div className="text-3xl font-bold text-accent-foreground font-mono">
+                {countdown}
+              </div>
+              <div className="text-xs text-accent-foreground/80 mt-1">Đang cược</div>
+            </motion.div>
+          ) : gameStatus === "rolling" || isRolling ? (
+            <motion.div
+              key="rolling"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-sm font-bold text-accent-foreground"
+            >
+              Đang quay...
+            </motion.div>
+          ) : (
+            <motion.div
+              key="result"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="flex flex-col items-center justify-center"
+            >
+              <DiceGroup dice={dice} isRolling={false} size="sm" />
+              <span className="text-xl font-bold text-white font-mono mt-1">
+                {total || "?"}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+      
+      {gameStatus === "finished" && waitCountdown > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-2 text-sm text-muted-foreground"
+        >
+          Ván mới trong: <span className="text-casino-gold font-mono font-bold">{waitCountdown}s</span>
+        </motion.div>
+      )}
+    </div>
   );
 }
 
@@ -75,16 +159,8 @@ export function BettingTable() {
     betAmount,
     addToBetAmount,
     selectedChip,
-    isRolling,
   } = useGameStore();
 
-  const dice: [number, number, number] = currentGame?.dice1 && currentGame?.dice2 && currentGame?.dice3
-    ? [currentGame.dice1, currentGame.dice2, currentGame.dice3]
-    : [1, 1, 1];
-
-  const total = currentGame?.total || 0;
-  const taiTotal = 0;
-  const xiuTotal = 0;
   const gameStatus = currentGame?.status || "waiting";
   const isBettingDisabled = gameStatus !== "waiting";
 
@@ -108,40 +184,18 @@ export function BettingTable() {
         <BettingSection
           side="tai"
           label="Tài"
-          totalBet={taiTotal + (selectedSide === "tai" ? betAmount : 0)}
+          totalBet={selectedSide === "tai" ? betAmount : 0}
           onSelect={() => handleSelectSide("tai")}
           isSelected={selectedSide === "tai"}
           isDisabled={isBettingDisabled}
         />
         
-        <div className="flex flex-col items-center justify-center">
-          <motion.div
-            className={cn(
-              "w-24 h-24 rounded-full flex flex-col items-center justify-center",
-              "bg-gradient-to-b from-casino-gold to-casino-gold-dark",
-              "border-4 border-casino-gold-light shadow-lg"
-            )}
-            animate={isRolling ? { rotate: 360 } : { rotate: 0 }}
-            transition={isRolling ? { duration: 1, repeat: Infinity, ease: "linear" } : {}}
-            data-testid="result-circle"
-          >
-            {gameStatus === "rolling" || isRolling ? (
-              <div className="text-sm font-bold text-accent-foreground">Đang quay...</div>
-            ) : (
-              <>
-                <DiceGroup dice={dice} isRolling={isRolling} size="sm" />
-                <span className="text-2xl font-bold text-accent-foreground font-mono mt-1">
-                  {total || "?"}
-                </span>
-              </>
-            )}
-          </motion.div>
-        </div>
+        <DiceDisplay />
         
         <BettingSection
           side="xiu"
           label="Xỉu"
-          totalBet={xiuTotal + (selectedSide === "xiu" ? betAmount : 0)}
+          totalBet={selectedSide === "xiu" ? betAmount : 0}
           onSelect={() => handleSelectSide("xiu")}
           isSelected={selectedSide === "xiu"}
           isDisabled={isBettingDisabled}

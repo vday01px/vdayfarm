@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 
 export function ResultHistory() {
   const { resultHistory, countdown, currentGame } = useGameStore();
-  const gameStatus = currentGame?.status || "betting";
+  const gameStatus = currentGame?.status || "waiting";
 
   return (
     <div className="p-4" data-testid="result-history">
@@ -24,7 +24,7 @@ export function ResultHistory() {
               "border-2 border-casino-gold-light font-mono text-xl font-bold text-accent-foreground"
             )}
             animate={
-              gameStatus === "betting"
+              gameStatus === "waiting"
                 ? { scale: [1, 1.05, 1] }
                 : {}
             }
