@@ -95,15 +95,24 @@ interface DiceGroupProps {
 
 export function DiceGroup({ dice, isRolling = false, size = "md" }: DiceGroupProps) {
   return (
-    <div className="flex items-center justify-center gap-2" data-testid="dice-group">
-      {dice.map((value, index) => (
+    <div className="flex flex-col items-center gap-1" data-testid="dice-group">
+      <Dice
+        value={dice[0]}
+        isRolling={isRolling}
+        size={size}
+      />
+      <div className="flex items-center gap-1">
         <Dice
-          key={index}
-          value={value}
+          value={dice[1]}
           isRolling={isRolling}
           size={size}
         />
-      ))}
+        <Dice
+          value={dice[2]}
+          isRolling={isRolling}
+          size={size}
+        />
+      </div>
     </div>
   );
 }

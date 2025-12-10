@@ -53,11 +53,8 @@ export default function GamePage() {
   useEffect(() => {
     if (userData) {
       setUser(userData);
-      if (userData.isLocked) {
-        setActiveModal("locked");
-      }
     }
-  }, [userData, setUser, setActiveModal]);
+  }, [userData, setUser]);
 
   useEffect(() => {
     if (currentGameData) {
@@ -82,7 +79,7 @@ export default function GamePage() {
   }, [betsData, setBets]);
 
   useEffect(() => {
-    if (!currentGameData || currentGameData.status !== "betting") return;
+    if (!currentGameData || currentGameData.status !== "waiting") return;
 
     const createdAt = new Date(currentGameData.createdAt).getTime();
     const bettingDuration = 30 * 1000;
@@ -101,7 +98,12 @@ export default function GamePage() {
 
   const placeBetMutation = useMutation({
     mutationFn: async (data: { side: "tai" | "xiu"; amount: number }) => {
-      return apiRequest("POST", "/api/bets", data);
+      if (!currentGameData) throw new Error("No active game");
+      return apiRequest("POST", "/api/bets", {
+        gameId: currentGameData.id,
+        betType: data.side,
+        amount: data.amount.toString(),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });

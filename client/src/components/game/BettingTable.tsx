@@ -83,10 +83,10 @@ export function BettingTable() {
     : [1, 1, 1];
 
   const total = currentGame?.total || 0;
-  const taiTotal = parseFloat(currentGame?.taiTotal?.toString() || "0");
-  const xiuTotal = parseFloat(currentGame?.xiuTotal?.toString() || "0");
-  const gameStatus = currentGame?.status || "betting";
-  const isBettingDisabled = gameStatus !== "betting";
+  const taiTotal = 0;
+  const xiuTotal = 0;
+  const gameStatus = currentGame?.status || "waiting";
+  const isBettingDisabled = gameStatus !== "waiting";
 
   const handleSelectSide = (side: BetSide) => {
     if (selectedSide === side) {
