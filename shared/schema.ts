@@ -1,3 +1,4 @@
+
 import { pgTable, text, integer, boolean, timestamp, pgEnum, decimal } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -77,3 +78,10 @@ export type User = z.infer<typeof selectUserSchema>;
 export type Game = z.infer<typeof selectGameSchema>;
 export type Bet = z.infer<typeof selectBetSchema>;
 export type Giftcode = z.infer<typeof selectGiftcodeSchema>;
+export type BetWithUser = Bet & { user: User };
+export type GameSettings = {
+  autoRollEnabled: boolean;
+  autoRollInterval: number;
+  minBet: string;
+  maxBet: string;
+};

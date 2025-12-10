@@ -134,7 +134,7 @@ export const storage = {
 
     for (const bet of gameBets) {
       if (bet.betType === game.result) {
-        // Win: payout = bet amount * 2
+        // Win: payout = bet amount * 1.95
         const payout = (parseFloat(bet.amount) * 1.95).toFixed(2);
         await this.updateBetPayout(bet.id, payout);
         await this.updateUserBalance(bet.userId, payout);
