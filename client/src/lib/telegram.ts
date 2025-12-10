@@ -60,6 +60,16 @@ export function getTelegramUser(): TelegramUser | null {
   const user = webApp?.initDataUnsafe?.user;
   
   if (!user) {
+    // Development fallback - create a test user
+    if (import.meta.env.DEV) {
+      return {
+        id: 123456789,
+        firstName: "Test",
+        lastName: "User",
+        username: "testuser",
+        languageCode: "vi",
+      };
+    }
     return null;
   }
   
